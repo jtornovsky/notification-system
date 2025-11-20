@@ -10,6 +10,7 @@ function App() {
     const [analytics, setAnalytics] = useState(null)
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/immutability
         fetchAnalytics();  // Auto-call on mount
     }, []);  // run once on load
 
@@ -25,7 +26,7 @@ function App() {
             setType('EMAIL');
         }
         // Check for phone (digits with optional +, (), -, spaces)
-        else if (/^[\d\+\(\)\-\s]{10,20}$/.test(value)) {
+        else if (/^[\d+()\-\s]{10,20}$/.test(value)) {
             const digitCount = value.replace(/\D/g, '').length;
             if (digitCount >= 10 && digitCount <= 15) {
                 setType('SMS');
