@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package notification;
 
-// This will be the Go package path when we generate Go code from this proto file
+// This will be the Go package path when we generate Go code from this proto file.
 option go_package = "github.com/jtornovsky/notification-system/proto";
 
 // ============================================================================
