@@ -40,7 +40,7 @@ function App() {
         }
     }
 
-    function handleSubmit() {
+    async function handleSubmit() {
         const notification = {
             user_id: userId,
             type: type,
@@ -51,7 +51,37 @@ function App() {
 
         console.log('Sending notification:', notification);
 
-        // TODO: Send to API Gateway
+        try {
+            const response = await fetch('http://localhost:8080/notifications', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(notification)
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Success:', data);
+                alert('Notification sent successfully!');
+
+                // Clear form
+                setUserId('');
+                setType('');
+                setRecipient('');
+                setSubject('');
+                setMessage('');
+
+                // Refresh analytics to see new data
+                fetchAnalytics();
+            } else {
+                console.error('Error:', response.status);
+                alert('Failed to send notification');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error sending notification: ' + error.message);
+        }
     }
 
     async function fetchAnalytics() {
