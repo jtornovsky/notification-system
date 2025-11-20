@@ -86,24 +86,7 @@ function App() {
 
     async function fetchAnalytics() {
         try {
-            const response = await fetch('http://localhost:9200/notification-analytics/_search', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    size: 0,
-                    aggs: {
-                        by_status: {
-                            terms: { field: 'status' }
-                        },
-                        by_type: {
-                            terms: { field: 'type' }
-                        }
-                    }
-                })
-            });
-
+            const response = await fetch('http://localhost:8080/analytics');
             const data = await response.json();
             console.log('Analytics data:', data);
             setAnalytics(data);

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -70,6 +71,7 @@ func main() {
 
 	router.POST("/notifications", createNotification)
 	router.GET("/notifications/:id", getNotification)
+	router.GET("/analytics", getAnalytics)
 	router.GET("/health", healthCheck)
 
 	log.Println("API Gateway listening on :8080")
@@ -132,4 +134,30 @@ func healthCheck(c *gin.Context) {
 
 func generateID() string {
 	return time.Now().Format("20060102150405")
+}
+
+func getAnalytics(c *gin.Context) {
+	// Proxy request to Elasticsearch
+	resp, err := http.Post(
+		"http://localhost:9200/notification-analytics/_search",
+		"application/json",
+		strings.NewReader(`{
+			"size": 0,
+			"aggs": {
+				"by_status": {"terms": {"field": "status"}},
+				"by_type": {"terms": {"field": "type"}}
+			}
+		}`),
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	c.JSON(http.StatusOK, result)
 }
