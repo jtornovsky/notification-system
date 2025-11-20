@@ -1,2 +1,5 @@
 # Project exclude paths
 /proto/github.com/jtornovsky/notification-system/
+/analytics-service/node_modules/
+/notification-processor/node_modules/
+/.idea/
