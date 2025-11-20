@@ -220,7 +220,7 @@ Retrieve a cached notification (1-hour TTL).
 
 ---
 
-### **POST /analytics**
+### **GET /analytics**
 
 Fetch analytics from Elasticsearch (proxied through API Gateway for CORS).
 
