@@ -11,6 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "kafkajs": "^2.2.4",
+    "long": "^5.3.2",
+    "protobufjs": "^7.5.4",
     "winston": "^3.18.3"
   }
 }

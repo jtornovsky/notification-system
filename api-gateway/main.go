@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	pb "github.com/jtornovsky/notification-system/proto"
 	"github.com/redis/go-redis/v9"
 	"github.com/segmentio/kafka-go"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -95,17 +98,50 @@ func createNotification(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 
+	log.Printf("📝 Created notification: ID=%s, Type=%s, Recipient=%s",
+		notification.ID, notification.Type, notification.Recipient)
+
+	// Cache in Redis (still using JSON for easy retrieval via HTTP)
 	notificationJSON, _ := json.Marshal(notification)
 	redisClient.Set(ctx, "notification:"+notification.ID, notificationJSON, time.Hour)
+	log.Printf("💾 Cached to Redis: notification:%s", notification.ID)
 
-	err := kafkaWriter.WriteMessages(ctx, kafka.Message{
+	// Create Protobuf message for Kafka
+	pbNotification := &pb.Notification{
+		Id:        notification.ID,
+		UserId:    notification.UserID,
+		Type:      pb.NotificationType(pb.NotificationType_value[notification.Type]),
+		Recipient: notification.Recipient,
+		Subject:   notification.Subject,
+		Message:   notification.Message,
+		CreatedAt: notification.CreatedAt.UnixMilli(),
+		Status:    pb.NotificationStatus_PENDING,
+	}
+
+	// Marshal to Protobuf bytes
+	pbData, err := proto.Marshal(pbNotification)
+	if err != nil {
+		log.Printf("❌ Failed to marshal protobuf: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process notification"})
+		return
+	}
+
+	log.Printf("📦 Marshaled to Protobuf: %d bytes (vs JSON: %d bytes)",
+		len(pbData), len(notificationJSON))
+
+	// Send Protobuf bytes to Kafka
+	err = kafkaWriter.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(notification.ID),
-		Value: notificationJSON,
+		Value: pbData, // ← Protobuf bytes instead of JSON
 	})
 
 	if err != nil {
-		log.Printf("Failed to write to Kafka: %v", err)
+		log.Printf("❌ Failed to write to Kafka: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send notification"})
+		return
 	}
+
+	log.Printf("✅ Sent to Kafka topic 'notifications': ID=%s", notification.ID)
 
 	c.JSON(http.StatusCreated, notification)
 }
@@ -154,10 +190,19 @@ func getAnalytics(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Printf("⚠️ Error to close body: %v", err)
+		}
+	}(resp.Body)
 
 	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	if err != nil {
+		log.Printf("⚠️ Error to parse body: %v", err)
+		return
+	}
 
 	c.JSON(http.StatusOK, result)
 }

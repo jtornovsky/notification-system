@@ -2,14 +2,15 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"time"
 
 	"delivery-service/internal/models"
 	"delivery-service/internal/mongo"
 
+	pb "github.com/jtornovsky/notification-system/proto"
 	"github.com/segmentio/kafka-go"
+	"google.golang.org/protobuf/proto"
 )
 
 // DeliverySimulator is a function that simulates delivery for a specific type
@@ -63,13 +64,23 @@ func NewHandler(
 
 // processMessage handles a single notification message
 func (h *Handler) processMessage(ctx context.Context, message kafka.Message) error {
-	var notification models.Notification
-	if err := json.Unmarshal(message.Value, &notification); err != nil {
-		log.Printf("❌ [%s] Failed to parse notification: %v\n", h.name, err)
+	// Deserialize Protobuf message
+	pbNotification := &pb.Notification{}
+	if err := proto.Unmarshal(message.Value, pbNotification); err != nil {
+		log.Printf("❌ [%s] Failed to unmarshal protobuf: %v\n", h.name, err)
 		return err
 	}
 
-	log.Printf("📩 [%s] Processing notification: %s for %s\n", h.name, notification.ID, notification.Recipient)
+	log.Printf("📦 [%s] Received Protobuf message: %d bytes\n", h.name, len(message.Value))
+
+	// Convert to internal model
+	notification := models.Notification{
+		ID:        pbNotification.Id,
+		Type:      pb.NotificationType_name[int32(pbNotification.Type)],
+		Recipient: pbNotification.Recipient,
+		Subject:   pbNotification.Subject,
+		Message:   pbNotification.Message,
+	}
 
 	status, deliveryTimeMs, err := h.simulator(notification)
 
@@ -96,12 +107,25 @@ func (h *Handler) processMessage(ctx context.Context, message kafka.Message) err
 
 	log.Printf("✓ [%s] Saved delivery result to MongoDB\n", h.name)
 
-	// Use the same struct for Kafka (json tags will be used automatically)
-	eventBytes, err := json.Marshal(deliveryResult)
+	// Create Protobuf delivery event
+	pbDeliveryEvent := &pb.DeliveryEvent{
+		NotificationId: deliveryResult.NotificationID,
+		Type:           pb.NotificationType(pb.NotificationType_value[deliveryResult.Type]),
+		Recipient:      deliveryResult.Recipient,
+		Status:         pb.NotificationStatus(pb.NotificationStatus_value[deliveryResult.Status]),
+		ProcessedAt:    deliveryResult.Timestamp.UnixMilli(),
+		ErrorMessage:   deliveryResult.ErrorMessage,
+		DeliveryTimeMs: int32(deliveryResult.DeliveryTimeMs),
+	}
+
+	// Marshal to Protobuf bytes
+	eventBytes, err := proto.Marshal(pbDeliveryEvent)
 	if err != nil {
-		log.Printf("❌ [%s] Failed to marshal delivery event: %v\n", h.name, err)
+		log.Printf("❌ [%s] Failed to marshal protobuf delivery event: %v\n", h.name, err)
 		return err
 	}
+
+	log.Printf("📦 [%s] Publishing Protobuf delivery event: %d bytes\n", h.name, len(eventBytes))
 
 	if err := h.producer.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(notification.ID),

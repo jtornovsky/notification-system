@@ -3,7 +3,7 @@ syntax = "proto3";
 package notification;
 
 // This will be the Go package path when we generate Go code from this proto file.
-option go_package = "github.com/jtornovsky/notification-system/proto";
+option go_package = "github.com/jtornovsky/notification-system/proto/go";
 
 // ============================================================================
 // MAIN NOTIFICATION MESSAGE
@@ -77,6 +77,8 @@ message DeliveryEvent {
   int64 processed_at = 3;           // Unix timestamp when delivery was attempted
   string error_message = 4;         // If FAILED, what went wrong? (e.g., "Invalid email address")
   int32 delivery_time_ms = 5;       // How long did the delivery attempt take? (for performance metrics)
+  NotificationType type = 6;
+  string recipient = 7;
 }
 
 // ============================================================================

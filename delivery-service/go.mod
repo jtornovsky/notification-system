@@ -3,8 +3,10 @@ module delivery-service
 go 1.25.4
 
 require (
+	github.com/jtornovsky/notification-system/proto v0.0.0-00010101000000-000000000000
 	github.com/segmentio/kafka-go v0.4.49
 	go.mongodb.org/mongo-driver v1.17.6
+	google.golang.org/protobuf v1.36.10
 )
 
 require (
@@ -20,3 +22,5 @@ require (
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 )
+
+replace github.com/jtornovsky/notification-system/proto => ../proto/github.com/jtornovsky/notification-system/proto/go

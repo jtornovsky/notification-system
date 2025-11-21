@@ -1,6 +1,7 @@
 const { Kafka } = require('kafkajs');
 const winston = require('winston');
-
+const root = require('../proto/github.com/jtornovsky/notification-system/proto/js/notification_pb');
+const { Notification, NotificationType } = root.notification;
 
 // ============================================================================
 // LOGGER CONFIGURATION
@@ -83,49 +84,45 @@ async function start() {
         // "eachMessage" is a callback that runs for EVERY message received
         await consumer.run({
             eachMessage: async ({ topic, partition, message }) => {
-                // This function runs for each message from Kafka
-                // Parameters:
-                //   - topic: which topic the message came from
-                //   - partition: which partition (Kafka splits topics into partitions)
-                //   - message: the actual message object
 
-                // --------------------------------------------------------
-                // Convert message from bytes to string
-                // --------------------------------------------------------
-                // message.value is a Buffer (binary data)
-                // toString() converts it to readable text
-                const value = message.value.toString();
-
-                // Log the raw message we received
-                logger.info('📩 Received message:', {
-                    topic: topic,           // Topic name
-                    partition: partition,   // Partition number
-                    offset: message.offset, // Message position in partition
-                    value: value            // Message content (JSON string)
+                logger.info('📩 Received Protobuf message:', {
+                    topic: topic,
+                    partition: partition,
+                    offset: message.offset,
+                    sizeBytes: message.value.length
                 });
 
-
-                // --------------------------------------------------------
-                // Parse JSON and handle errors
-                // --------------------------------------------------------
                 try {
-                    // Parse JSON string into JavaScript object
-                    // Like ObjectMapper.readValue() in Java
-                    const notification = JSON.parse(value);
+                    // Decode Protobuf bytes to object
+                    const pbNotification = Notification.decode(message.value);
 
-                    // Log the parsed notification
+                    // Convert to plain JavaScript object
+                    const notification = {
+                        id: pbNotification.id,
+                        userId: pbNotification.userId,
+                        type: pbNotification.type,  // This is a NUMBER (0, 1, 2)
+                        recipient: pbNotification.recipient,
+                        subject: pbNotification.subject,
+                        message: pbNotification.message,
+                        createdAt: pbNotification.createdAt,
+                        status: pbNotification.status
+                    };
+
+                    // Convert type NUMBER to STRING
+                    const typeNames = ['EMAIL', 'SMS', 'PUSH'];
+                    const typeString = typeNames[notification.type] || 'UNKNOWN';
+
                     logger.info('📝 Parsed notification:', {
-                        id: notification.id,            // UUID
-                        type: notification.type,        // EMAIL, SMS, or PUSH
-                        recipient: notification.recipient  // Email/phone/device token
+                        id: notification.id,
+                        type: typeString,
+                        typeNumber: notification.type,
+                        recipient: notification.recipient
                     });
 
-                    // Route the notification to type-specific topic
-                    await routeNotification(notification);
+                    // Route the notification
+                    await routeNotification(notification, typeString, pbNotification);
 
                 } catch (parseError) {
-                    // If JSON.parse() fails (invalid JSON), log the error
-                    // Don't crash - just skip this bad message
                     logger.error('❌ Failed to parse message:', parseError);
                 }
             }
@@ -166,11 +163,10 @@ process.on('SIGINT', async () => {
 });
 
 // Function to route notification to type-specific topic
-async function routeNotification(notification) {
-    // Determine target topic based on notification type
+async function routeNotification(notification, typeString, pbNotification) {
     let targetTopic;
 
-    switch (notification.type) {
+    switch (typeString) {
         case 'EMAIL':
             targetTopic = 'email-notifications';
             break;
@@ -181,24 +177,26 @@ async function routeNotification(notification) {
             targetTopic = 'push-notifications';
             break;
         default:
-            logger.error('❌ Unknown notification type:', notification.type);
-            return;  // Don't route unknown types
+            logger.error('❌ Unknown notification type:', typeString);
+            return;
     }
 
     logger.info('📤 Routing to topic:', {
         notificationId: notification.id,
-        type: notification.type,
+        type: typeString,
         targetTopic: targetTopic
     });
 
-    // Publish to type-specific topic
     try {
+        // Encode back to Protobuf
+        const pbBuffer = Notification.encode(pbNotification).finish();
+
         await producer.send({
             topic: targetTopic,
             messages: [
                 {
-                    key: notification.id,           // Use notification ID as key
-                    value: JSON.stringify(notification)  // Convert back to JSON string
+                    key: notification.id,
+                    value: pbBuffer
                 }
             ]
         });

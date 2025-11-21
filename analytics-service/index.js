@@ -1,5 +1,7 @@
 const { Kafka } = require('kafkajs');
 const { Client } = require('@elastic/elasticsearch');
+const root = require('../proto/github.com/jtornovsky/notification-system/proto/js/notification_pb');
+const { DeliveryEvent, NotificationType, NotificationStatus } = root.notification;
 
 // ============================================
 // Configuration
@@ -100,11 +102,23 @@ async function startConsumer() {
         console.log('✅ Subscribed to delivery-events topic');
 
         await consumer.run({
-            eachMessage: async ({ topic, partition, message }) => {
+            eachMessage: async ({ message }) => {
                 try {
-                    const event = JSON.parse(message.value.toString());
+                    // Decode Protobuf message
+                    const pbEvent = DeliveryEvent.decode(message.value);
 
-                    console.log(`📩 Received: ${event.notification_id} (${event.type}, ${event.status})`);
+                    // Convert to plain object
+                    const event = {
+                        notification_id: pbEvent.notificationId,
+                        type: NotificationType[pbEvent.type] || 'UNKNOWN',
+                        recipient: pbEvent.recipient,
+                        status: NotificationStatus[pbEvent.status] || 'UNKNOWN',
+                        timestamp: new Date(Number(pbEvent.processedAt)),
+                        delivery_time_ms: pbEvent.deliveryTimeMs,
+                        error_message: pbEvent.errorMessage || null
+                    };
+
+                    console.log(`📩 Received Protobuf: ${event.notification_id} (${event.type}, ${event.status})`);
 
                     await indexDeliveryEvent(event);
 
